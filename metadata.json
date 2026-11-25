@@ -1,0 +1,6 @@
+{
+  "name": "Maison Serein",
+  "description": "Collezione di dimore e suite private tra Nizza e Milano con calendario unificato, sincronizzazione iCal (.ics) per Airbnb e Booking.com e pagamenti Stripe-ready.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
