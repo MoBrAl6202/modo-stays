@@ -12,6 +12,7 @@ import {
   KeyRound,
   Lock,
   LogOut,
+  MapPin,
   Plus,
   RefreshCw,
   Trash2,
@@ -133,6 +134,8 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
 
   const [editingSuiteId, setEditingSuiteId] = useState<string>('carlone-lumiere');
   const [savingSuite, setSavingSuite] = useState(false);
+  const [mapUrlDraft, setMapUrlDraft] = useState<string>(BRAND_INFO.mappaMyMapsUrl);
+  const [savingMapUrl, setSavingMapUrl] = useState(false);
   const [suiteDraft, setSuiteDraft] = useState<{
     name: string;
     subtitle: string;
@@ -179,6 +182,9 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
         setConflicts(data.conflicts);
         setWaitlist(data.waitlist);
         setIntegrationStatus(data.integrationStatus);
+        if (data.integrationStatus?.mapEmbedUrl !== undefined) {
+          setMapUrlDraft(data.integrationStatus.mapEmbedUrl);
+        }
         setAuthenticated(true);
 
         const drafts: Record<string, { airbnbIcsUrl: string; bookingIcsUrl: string }> = {};
@@ -512,6 +518,35 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
       }
     } finally {
       setSavingSuite(false);
+    }
+  };
+
+  const handleSaveMapUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingMapUrl(true);
+    setSyncMessage('');
+    setSyncError('');
+    try {
+      const res = await fetch('/api/host/map-url', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-host-code': hostCode,
+        },
+        body: JSON.stringify({ mapEmbedUrl: mapUrlDraft }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSyncError(data.error || 'Impossibile salvare il link della mappa.');
+        return;
+      }
+      setMapUrlDraft(data.mapEmbedUrl || '');
+      setSyncMessage('Link Google My Maps aggiornato sul sito pubblico.');
+      if (onCatalogUpdated) {
+        await onCatalogUpdated();
+      }
+    } finally {
+      setSavingMapUrl(false);
     }
   };
 
@@ -1206,6 +1241,39 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
               </div>
             </div>
           </div>
+
+          <form
+            onSubmit={handleSaveMapUrl}
+            className="p-5 bg-[#FFFFFF] border border-[#E6E2DA] space-y-3"
+          >
+            <div className="flex items-start gap-3">
+              <MapPin className="w-5 h-5 text-[#2C3E35] shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1">
+                <p className="text-xs font-semibold text-[#1C1A17]">
+                  Mappa Destinazioni (Google My Maps)
+                </p>
+                <p className="text-xs text-[#666158]">
+                  Incolla il link della tua mappa Google My Maps (anche il link <span className="font-mono">/edit?mid=...</span>, il sito lo converte automaticamente). Ricorda su Google My Maps di impostare <span className="font-medium text-[#1C1A17]">Condividi → Chiunque abbia questo link può visualizzare</span>. Puoi modificarlo anche in <span className="font-mono">src/CONTENUTI_ALLOGGI.ts</span> alla voce <span className="font-mono">mappaMyMapsUrl</span>.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="url"
+                value={mapUrlDraft}
+                onChange={(e) => setMapUrlDraft(e.target.value)}
+                placeholder="https://www.google.com/maps/d/edit?mid=..."
+                className="flex-1 px-3 py-2 text-xs font-mono bg-[#FAF9F6] border border-[#D8D3C8]"
+              />
+              <button
+                type="submit"
+                disabled={savingMapUrl}
+                className="px-4 py-2 bg-[#2C3E35] text-[#FAF9F6] text-xs font-medium hover:bg-[#1F2D26] transition-colors cursor-pointer disabled:opacity-60 whitespace-nowrap shrink-0"
+              >
+                {savingMapUrl ? 'Salvataggio...' : 'Salva Link Mappa'}
+              </button>
+            </div>
+          </form>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             <div className="lg:col-span-4 space-y-3">

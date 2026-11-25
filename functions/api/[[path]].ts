@@ -2,6 +2,7 @@ import {
   AUTO_SYNC_INTERVAL_MINUTES,
   applySuitePatch,
   buildSampleExternalIcs,
+  convertiLinkMyMaps,
   createSeedState,
   detectConflicts,
   diffNights,
@@ -14,6 +15,7 @@ import {
   type DatabaseState,
   type SuiteUpdatePatch,
 } from '../../shared/motore-ical-e-dati.ts';
+import { BRAND_INFO } from '../../src/CONTENUTI_ALLOGGI.ts';
 import type {
   BookingRecord,
   GeoCoordinates,
@@ -330,7 +332,10 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
       })
     );
     if (mutated) await saveState(env, state);
-    return jsonResponse({ locations: enriched });
+    return jsonResponse({
+      locations: enriched,
+      mapEmbedUrl: convertiLinkMyMaps(state.mapEmbedUrl ?? BRAND_INFO.mappaMyMapsUrl),
+    });
   }
 
   if (pathname === '/api/suites' && method === 'GET') {
@@ -598,8 +603,17 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
           stripeMode: env.STRIPE_SECRET_KEY ? 'live_or_test_api' : 'sandbox_preview',
           appBaseUrl: resolveAppBaseUrl(request, env),
           autoSyncIntervalMinutes: AUTO_SYNC_INTERVAL_MINUTES,
+          mapEmbedUrl: convertiLinkMyMaps(state.mapEmbedUrl ?? BRAND_INFO.mappaMyMapsUrl),
         },
       });
+    }
+
+    if (pathname === '/api/host/map-url' && method === 'PUT') {
+      const state = await loadState(env);
+      const body = (await request.json()) as { mapEmbedUrl?: string };
+      state.mapEmbedUrl = convertiLinkMyMaps(body.mapEmbedUrl || '');
+      await saveState(env, state);
+      return jsonResponse({ mapEmbedUrl: state.mapEmbedUrl });
     }
 
     const hostSuiteEditMatch = pathname.match(/^\/api\/host\/suites\/([^/]+)$/);

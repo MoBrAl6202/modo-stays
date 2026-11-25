@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AdvancedMarker,
   InfoWindow,
@@ -11,13 +11,42 @@ import {
   useMap,
   useMapsLibrary,
 } from '@vis.gl/react-google-maps';
-import { ArrowRight, Compass, MapPin } from 'lucide-react';
+import { ArrowRight, Compass, ExternalLink, MapPin } from 'lucide-react';
+import { BRAND_INFO } from '../CONTENUTI_ALLOGGI';
 import type { GeoCoordinates, SuiteLocation } from '../types';
 
 interface MappaDestinazioniProps {
   locations: SuiteLocation[];
   hasApiKey: boolean;
+  mapEmbedUrl?: string;
   onSelectLocationAction: (locationId: string) => void;
+}
+
+const CITY_FOCUS_COORDS: Record<string, { lat: number; lng: number; zoom: number }> = {
+  nice: { lat: 43.6948, lng: 7.2414, zoom: 15 },
+  ibiza: { lat: 38.9089, lng: 1.4328, zoom: 15 },
+  milano: { lat: 45.4526, lng: 9.1932, zoom: 15 },
+};
+
+function normalizeMyMapsEmbedUrl(rawUrl: string): {
+  embedBase: string;
+  viewerUrl: string;
+} {
+  const clean = (rawUrl || '').trim();
+  if (!clean) return { embedBase: '', viewerUrl: '' };
+  try {
+    const parsed = new URL(clean);
+    const mid = parsed.searchParams.get('mid');
+    if (mid && parsed.hostname.includes('google.')) {
+      return {
+        embedBase: `https://www.google.com/maps/d/embed?mid=${encodeURIComponent(mid)}`,
+        viewerUrl: `https://www.google.com/maps/d/viewer?mid=${encodeURIComponent(mid)}`,
+      };
+    }
+    return { embedBase: clean, viewerUrl: clean };
+  } catch {
+    return { embedBase: clean, viewerUrl: clean };
+  }
 }
 
 interface LocationMarkerProps {
@@ -210,14 +239,25 @@ function PlacesGeocodeResolver({
   return null;
 }
 
-export function MappaDestinazioni({
+function GoogleJsMapFallback({
   locations,
   hasApiKey,
-  onSelectLocationAction,
-}: MappaDestinazioniProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [openInfoId, setOpenInfoId] = useState<string | null>(null);
-  const [overviewTrigger, setOverviewTrigger] = useState(0);
+  selectedId,
+  openInfoId,
+  overviewTrigger,
+  onSelectLocation,
+  onCloseInfo,
+  onActionClick,
+}: {
+  locations: SuiteLocation[];
+  hasApiKey: boolean;
+  selectedId: string | null;
+  openInfoId: string | null;
+  overviewTrigger: number;
+  onSelectLocation: (id: string) => void;
+  onCloseInfo: () => void;
+  onActionClick: (id: string) => void;
+}) {
   const [coordsById, setCoordsById] = useState<Record<string, GeoCoordinates>>(() => {
     const initial: Record<string, GeoCoordinates> = {};
     for (const loc of locations) {
@@ -244,6 +284,104 @@ export function MappaDestinazioni({
     setCoordsById((prev) => ({ ...prev, [id]: coords }));
   }, []);
 
+  const isLoaded = useApiIsLoaded();
+  const apiStatus = useApiLoadingStatus();
+  const mapFailed =
+    !hasApiKey ||
+    apiStatus === APILoadingStatus.FAILED ||
+    apiStatus === APILoadingStatus.AUTH_FAILURE;
+
+  if (mapFailed) {
+    return (
+      <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center">
+        <MapPin className="w-8 h-8 text-[#666158] mb-3" />
+        <h4 className="font-serif text-xl text-[#1C1A17]">
+          Mappa interattiva non configurata
+        </h4>
+        <p className="text-sm text-[#666158] max-w-md mt-2 leading-relaxed">
+          Inserisci il link Google My Maps in Area Host → Alloggi & Prezzi oppure nel file src/CONTENUTI_ALLOGGI.ts.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full w-full relative">
+      {!isLoaded && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#F3F1EC] text-sm text-[#666158]">
+          Caricamento mappa interattiva...
+        </div>
+      )}
+      <GoogleMap
+        mapId="DEMO_MAP_ID"
+        defaultCenter={{ lat: 42.5, lng: 5.5 }}
+        defaultZoom={5}
+        gestureHandling="cooperative"
+        disableDefaultUI={false}
+        streetViewControl={false}
+        mapTypeControl={false}
+        internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+        style={{ width: '100%', height: '100%' }}
+      >
+        <PlacesGeocodeResolver
+          locations={locations}
+          coordsById={coordsById}
+          onResolved={handleResolved}
+        />
+        <MapCameraController
+          coordsById={coordsById}
+          selectedId={selectedId}
+          overviewTrigger={overviewTrigger}
+        />
+
+        {locations.map((loc) => {
+          const coords = coordsById[loc.id];
+          if (!coords) return null;
+          return (
+            <LocationMarkerWithInfo
+              key={loc.id}
+              location={loc}
+              coordinates={coords}
+              isSelected={selectedId === loc.id}
+              isInfoOpen={openInfoId === loc.id}
+              onMarkerClick={onSelectLocation}
+              onInfoClose={onCloseInfo}
+              onActionClick={onActionClick}
+            />
+          );
+        })}
+      </GoogleMap>
+    </div>
+  );
+}
+
+export function MappaDestinazioni({
+  locations,
+  hasApiKey,
+  mapEmbedUrl,
+  onSelectLocationAction,
+}: MappaDestinazioniProps) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [openInfoId, setOpenInfoId] = useState<string | null>(null);
+  const [overviewTrigger, setOverviewTrigger] = useState(0);
+
+  const effectiveRawUrl =
+    mapEmbedUrl !== undefined ? mapEmbedUrl : BRAND_INFO.mappaMyMapsUrl;
+  const { embedBase, viewerUrl } = useMemo(
+    () => normalizeMyMapsEmbedUrl(effectiveRawUrl),
+    [effectiveRawUrl]
+  );
+
+  const iframeSrc = useMemo(() => {
+    if (!embedBase) return '';
+    if (selectedId && CITY_FOCUS_COORDS[selectedId]) {
+      const { lat, lng, zoom } = CITY_FOCUS_COORDS[selectedId];
+      const sep = embedBase.includes('?') ? '&' : '?';
+      return `${embedBase}${sep}ll=${lat}%2C${lng}&z=${zoom}`;
+    }
+    return embedBase;
+  }, [embedBase, selectedId]);
+
   const handleSelectLocation = useCallback((locationId: string) => {
     setSelectedId(locationId);
     setOpenInfoId(locationId);
@@ -254,13 +392,6 @@ export function MappaDestinazioni({
     setOpenInfoId(null);
     setOverviewTrigger((n) => n + 1);
   }, []);
-
-  const isLoaded = useApiIsLoaded();
-  const apiStatus = useApiLoadingStatus();
-  const mapFailed =
-    !hasApiKey ||
-    apiStatus === APILoadingStatus.FAILED ||
-    apiStatus === APILoadingStatus.AUTH_FAILURE;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
@@ -346,64 +477,50 @@ export function MappaDestinazioni({
         </button>
       </div>
 
-      <div className="lg:col-span-7 border border-[#E6E2DA] bg-[#F3F1EC] relative h-[480px] lg:h-[620px] min-h-[440px]">
-        {mapFailed ? (
-          <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center">
-            <MapPin className="w-8 h-8 text-[#666158] mb-3" />
-            <h4 className="font-serif text-xl text-[#1C1A17]">
-              Mappa interattiva non disponibile al momento
-            </h4>
-            <p className="text-sm text-[#666158] max-w-md mt-2 leading-relaxed">
-              Verifica la variabile VITE_GOOGLE_MAPS_API_KEY per visualizzare i pin di Nizza, Ibiza e Milano.
-            </p>
-          </div>
+      <div className="lg:col-span-7 border border-[#E6E2DA] bg-[#F3F1EC] relative h-[480px] lg:h-[620px] min-h-[440px] flex flex-col">
+        {iframeSrc ? (
+          <>
+            <div className="flex-1 w-full relative">
+              <iframe
+                key={iframeSrc}
+                src={iframeSrc}
+                title="Mappa Destinazioni Modo Stays"
+                className="w-full h-full border-0"
+                loading="lazy"
+                allowFullScreen
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </div>
+            <div className="px-4 py-2.5 bg-[#FFFFFF] border-t border-[#E6E2DA] flex flex-wrap items-center justify-between gap-2 text-xs text-[#666158]">
+              <span>
+                {selectedId
+                  ? `Focus su ${locations.find((l) => l.id === selectedId)?.city || ''}`
+                  : 'Mappa interattiva Google My Maps — Modo Stays'}
+              </span>
+              {viewerUrl && (
+                <a
+                  href={viewerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 font-medium text-[#2C3E35] hover:text-[#1A2620] underline underline-offset-4"
+                >
+                  Apri su Google Maps
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
+          </>
         ) : (
-          <div className="h-full w-full relative">
-            {!isLoaded && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#F3F1EC] text-sm text-[#666158]">
-                Caricamento mappa interattiva...
-              </div>
-            )}
-            <GoogleMap
-              mapId="DEMO_MAP_ID"
-              defaultCenter={{ lat: 42.5, lng: 5.5 }}
-              defaultZoom={5}
-              gestureHandling="cooperative"
-              disableDefaultUI={false}
-              streetViewControl={false}
-              mapTypeControl={false}
-              internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-              style={{ width: '100%', height: '100%' }}
-            >
-              <PlacesGeocodeResolver
-                locations={locations}
-                coordsById={coordsById}
-                onResolved={handleResolved}
-              />
-              <MapCameraController
-                coordsById={coordsById}
-                selectedId={selectedId}
-                overviewTrigger={overviewTrigger}
-              />
-
-              {locations.map((loc) => {
-                const coords = coordsById[loc.id];
-                if (!coords) return null;
-                return (
-                  <LocationMarkerWithInfo
-                    key={loc.id}
-                    location={loc}
-                    coordinates={coords}
-                    isSelected={selectedId === loc.id}
-                    isInfoOpen={openInfoId === loc.id}
-                    onMarkerClick={handleSelectLocation}
-                    onInfoClose={() => setOpenInfoId(null)}
-                    onActionClick={onSelectLocationAction}
-                  />
-                );
-              })}
-            </GoogleMap>
-          </div>
+          <GoogleJsMapFallback
+            locations={locations}
+            hasApiKey={hasApiKey}
+            selectedId={selectedId}
+            openInfoId={openInfoId}
+            overviewTrigger={overviewTrigger}
+            onSelectLocation={handleSelectLocation}
+            onCloseInfo={() => setOpenInfoId(null)}
+            onActionClick={onSelectLocationAction}
+          />
         )}
       </div>
     </div>

@@ -46,6 +46,7 @@ function ModoStaysShell({ quotaExceeded }: { quotaExceeded: boolean }) {
 
   const [locations, setLocations] = useState<SuiteLocation[]>([]);
   const [suites, setSuites] = useState<Suite[]>([]);
+  const [mapEmbedUrl, setMapEmbedUrl] = useState<string>(BRAND_INFO.mappaMyMapsUrl);
   const [loadingData, setLoadingData] = useState(true);
   const [stripeReturnNotice, setStripeReturnNotice] = useState<string | null>(null);
 
@@ -84,8 +85,14 @@ function ModoStaysShell({ quotaExceeded }: { quotaExceeded: boolean }) {
         fetch('/api/suites'),
       ]);
       if (locRes.ok) {
-        const locJson = (await locRes.json()) as { locations: SuiteLocation[] };
+        const locJson = (await locRes.json()) as {
+          locations: SuiteLocation[];
+          mapEmbedUrl?: string;
+        };
         setLocations(locJson.locations || []);
+        if (locJson.mapEmbedUrl !== undefined) {
+          setMapEmbedUrl(locJson.mapEmbedUrl);
+        }
       }
       if (suiteRes.ok) {
         const suiteJson = (await suiteRes.json()) as { suites: Suite[] };
@@ -506,6 +513,7 @@ function ModoStaysShell({ quotaExceeded }: { quotaExceeded: boolean }) {
                 <MappaDestinazioni
                   locations={locations}
                   hasApiKey={Boolean(MAPS_API_KEY)}
+                  mapEmbedUrl={mapEmbedUrl}
                   onSelectLocationAction={handleSelectLocationAction}
                 />
               )}

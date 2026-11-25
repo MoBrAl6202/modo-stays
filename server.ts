@@ -8,6 +8,7 @@ import {
   AUTO_SYNC_INTERVAL_MINUTES,
   applySuitePatch,
   buildSampleExternalIcs,
+  convertiLinkMyMaps,
   createSeedState,
   detectConflicts,
   diffNights,
@@ -20,6 +21,7 @@ import {
   type DatabaseState,
   type SuiteUpdatePatch,
 } from './shared/motore-ical-e-dati.ts';
+import { BRAND_INFO } from './src/CONTENUTI_ALLOGGI.ts';
 import type { GeoCoordinates, SuiteLocation } from './src/types.ts';
 
 dotenv.config();
@@ -201,7 +203,10 @@ async function startServer(): Promise<void> {
         return { ...loc, coordinates: coords ?? loc.coordinates ?? null };
       })
     );
-    res.json({ locations: enriched });
+    res.json({
+      locations: enriched,
+      mapEmbedUrl: convertiLinkMyMaps(dbState.mapEmbedUrl ?? BRAND_INFO.mappaMyMapsUrl),
+    });
   });
 
   app.get('/api/suites', (_req, res) => {
@@ -519,8 +524,17 @@ async function startServer(): Promise<void> {
         stripeMode: stripeClient ? 'live_or_test_api' : 'sandbox_preview',
         appBaseUrl: resolveAppBaseUrl(req),
         autoSyncIntervalMinutes: AUTO_SYNC_INTERVAL_MINUTES,
+        mapEmbedUrl: convertiLinkMyMaps(dbState.mapEmbedUrl ?? BRAND_INFO.mappaMyMapsUrl),
       },
     });
+  });
+
+  app.put('/api/host/map-url', requireHostAuth, (req, res) => {
+    const { mapEmbedUrl } = (req.body || {}) as { mapEmbedUrl?: string };
+    const converted = convertiLinkMyMaps(mapEmbedUrl || '');
+    dbState.mapEmbedUrl = converted;
+    saveLocalDb(dbState);
+    res.json({ mapEmbedUrl: dbState.mapEmbedUrl });
   });
 
   app.put('/api/host/suites/:id', requireHostAuth, (req, res) => {

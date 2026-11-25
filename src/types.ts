@@ -103,4 +103,5 @@ export interface SystemIntegrationStatus {
   stripeMode: 'live_or_test_api' | 'sandbox_preview';
   appBaseUrl: string;
   autoSyncIntervalMinutes: number;
+  mapEmbedUrl?: string;
 }

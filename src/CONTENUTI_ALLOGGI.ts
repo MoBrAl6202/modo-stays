@@ -26,6 +26,15 @@ export const BRAND_INFO = {
   introduzioneHero:
     'Modo Stays seleziona e cura appartamenti indipendenti nei quartieri più autentici d’Europa. Siamo aperti a Nizza su Boulevard Carlone, e stiamo preparando le nuove dimore di Ibiza (Febbraio 2027) e Milano (Agosto 2027).',
   cartellaFotoSpiegazione: 'public/foto-alloggi/',
+  /**
+   * LINK GOOGLE MY MAPS PERSONALIZZATO:
+   * Puoi incollare qui qualsiasi link della tua mappa Google My Maps
+   * (anche quello che finisce con /edit?mid=...): il sito lo trasforma in automatico!
+   * IMPORTANTE: su Google My Maps clicca "Condividi" e attiva
+   * "Chiunque abbia questo link può visualizzare".
+   */
+  mappaMyMapsUrl:
+    'https://www.google.com/maps/d/embed?mid=13zU9re6YjwjIcuAfEz5XPhBU9IqgT-k',
 };
 
 /**

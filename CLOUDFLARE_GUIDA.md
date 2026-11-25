@@ -11,8 +11,8 @@ Abbiamo organizzato il progetto con **pochi file dal nome chiaro**, così sai su
 | Cosa vuoi fare | Dove aprire / quale cartella o file usare |
 | :--- | :--- |
 | **Cambiare le FOTO delle case** | Cartella **`public/foto-alloggi/`** (contiene 6 file `.jpg` pronti da sostituire con le tue foto reali!) |
-| **Cambiare TESTI e DESCRIZIONI** | File **`src/CONTENUTI_ALLOGGI.ts`** (puoi aprirlo con qualsiasi editor di testo o Blocco Note e cambiare titoli, frasi, regole e indirizzi) |
-| **Cambiare PREZZI, DATE APERTURA, NOTE** | Direttamente dal sito! Vai in **`Area Host`** (in alto a destra) → codice `2026` → scheda **`Alloggi & Prezzi`** |
+| **Cambiare TESTI, DESCRIZIONI e LINK MAPPA** | File **`src/CONTENUTI_ALLOGGI.ts`** (puoi aprirlo su GitHub o sul PC e cambiare titoli, frasi, regole, indirizzi e `mappaMyMapsUrl`) |
+| **Cambiare PREZZI, DATE APERTURA, MAPPA dal sito** | Direttamente dal sito! Vai in **`Area Host`** (in alto a destra) → codice `2026` → scheda **`Alloggi & Prezzi`** |
 | **Collegare Airbnb, Booking e vedere prenotazioni** | Sempre dal sito in **`Area Host`** → schede **`Calendario`** e **`Link .ics & Auto-Sync`** |
 | **Database locale sul tuo PC** | File **`data/modo-stays-db.json`** (si crea e si aggiorna da solo quando testi il sito sul computer) |
 | **Backend automatico per Cloudflare** | File **`functions/api/[[path]].ts`** (non devi toccarlo: fa funzionare tutto su Cloudflare in automatico) |

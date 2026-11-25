@@ -1,5 +1,6 @@
 import {
   ALLOGGI_INIZIALI,
+  BRAND_INFO,
   DESTINAZIONI_INIZIALI,
 } from '../src/CONTENUTI_ALLOGGI.ts';
 import type {
@@ -18,6 +19,29 @@ export interface DatabaseState {
   suites: Suite[];
   bookings: BookingRecord[];
   waitlist: WaitlistEntry[];
+  mapEmbedUrl?: string;
+}
+
+/**
+ * Converte qualsiasi link di Google My Maps (/edit?mid=..., /view?mid=..., /embed?mid=...)
+ * nel formato sicuro per l'inserimento nel sito.
+ */
+export function convertiLinkMyMaps(rawUrl: string): string {
+  const trimmed = (rawUrl || '').trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    const mid = parsed.searchParams.get('mid');
+    if (mid && parsed.hostname.includes('google.')) {
+      return `https://www.google.com/maps/d/embed?mid=${encodeURIComponent(mid)}`;
+    }
+    return trimmed;
+  } catch {
+    if (/^[A-Za-z0-9_-]{15,}$/.test(trimmed)) {
+      return `https://www.google.com/maps/d/embed?mid=${trimmed}`;
+    }
+    return trimmed;
+  }
 }
 
 export interface SuiteUpdatePatch {
@@ -43,6 +67,7 @@ export function createSeedState(): DatabaseState {
   return {
     locations: structuredClone(DESTINAZIONI_INIZIALI),
     suites: structuredClone(ALLOGGI_INIZIALI),
+    mapEmbedUrl: BRAND_INFO.mappaMyMapsUrl,
     bookings: [
       {
         id: 'MS-2026-101',
