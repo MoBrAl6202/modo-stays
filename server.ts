@@ -22,6 +22,7 @@ import {
   type SuiteUpdatePatch,
 } from './shared/motore-ical-e-dati.ts';
 import { BRAND_INFO } from './src/CONTENUTI_ALLOGGI.ts';
+import { inviaEmailConfermaResend } from './src/EMAIL_CONFERMA.ts';
 import type { GeoCoordinates, SuiteLocation } from './src/types.ts';
 
 dotenv.config();
@@ -152,7 +153,7 @@ async function startServer(): Promise<void> {
   app.post(
     '/api/webhooks/stripe',
     express.raw({ type: 'application/json' }),
-    (req, res) => {
+    async (req, res) => {
       if (!stripeClient || !STRIPE_WEBHOOK_SECRET) {
         res.status(200).json({ received: true, mode: 'sandbox_unverified' });
         return;
@@ -178,6 +179,25 @@ async function startServer(): Promise<void> {
             if (found) {
               found.paymentStatus = 'paid';
               found.stripeSessionId = session.id;
+              if (!found.confirmationEmailSentAt && found.guestEmail) {
+                const suite = dbState.suites.find((s) => s.id === found.suiteId);
+                if (suite) {
+                  const location = dbState.locations.find(
+                    (l) => l.id === suite.locationId
+                  );
+                  const emailRes = await inviaEmailConfermaResend({
+                    resendApiKey: process.env.RESEND_API_KEY,
+                    fromEmail: process.env.EMAIL_FROM,
+                    hostNotificationEmail: process.env.HOST_NOTIFICATION_EMAIL,
+                    booking: found,
+                    suite,
+                    location,
+                  });
+                  if (emailRes.sent) {
+                    found.confirmationEmailSentAt = new Date().toISOString();
+                  }
+                }
+              }
               saveLocalDb(dbState);
             }
           }
@@ -416,7 +436,7 @@ async function startServer(): Promise<void> {
     });
   });
 
-  app.post('/api/bookings/confirm-sandbox', (req, res) => {
+  app.post('/api/bookings/confirm-sandbox', async (req, res) => {
     const { bookingId, cardLast4 } = req.body as {
       bookingId?: string;
       cardLast4?: string;
@@ -432,8 +452,33 @@ async function startServer(): Promise<void> {
     }
     found.paymentStatus = 'paid';
     found.stripeSessionId = `cs_sandbox_${cardLast4 || '4242'}_${Date.now()}`;
+
+    const suite = dbState.suites.find((s) => s.id === found.suiteId);
+    const location = suite
+      ? dbState.locations.find((l) => l.id === suite.locationId)
+      : undefined;
+
+    let emailStatus: { sent: boolean; reason?: string; recipient?: string } = {
+      sent: false,
+      reason: 'missing_suite',
+      recipient: found.guestEmail,
+    };
+    if (suite) {
+      emailStatus = await inviaEmailConfermaResend({
+        resendApiKey: process.env.RESEND_API_KEY,
+        fromEmail: process.env.EMAIL_FROM,
+        hostNotificationEmail: process.env.HOST_NOTIFICATION_EMAIL,
+        booking: found,
+        suite,
+        location,
+      });
+      if (emailStatus.sent) {
+        found.confirmationEmailSentAt = new Date().toISOString();
+      }
+    }
+
     saveLocalDb(dbState);
-    res.json({ booking: found });
+    res.json({ booking: found, emailStatus });
   });
 
   app.delete('/api/bookings/pending/:id', (req, res) => {
@@ -525,6 +570,7 @@ async function startServer(): Promise<void> {
         appBaseUrl: resolveAppBaseUrl(req),
         autoSyncIntervalMinutes: AUTO_SYNC_INTERVAL_MINUTES,
         mapEmbedUrl: convertiLinkMyMaps(dbState.mapEmbedUrl ?? BRAND_INFO.mappaMyMapsUrl),
+        emailConfigured: Boolean(process.env.RESEND_API_KEY),
       },
     });
   });
@@ -665,6 +711,37 @@ async function startServer(): Promise<void> {
     dbState.bookings.push(block);
     saveLocalDb(dbState);
     res.status(201).json({ block, conflicts: detectConflicts(dbState) });
+  });
+
+  app.post('/api/host/bookings/:id/send-confirmation', requireHostAuth, async (req, res) => {
+    const found = dbState.bookings.find((b) => b.id === req.params.id);
+    if (!found) {
+      res.status(404).json({ error: 'Prenotazione non trovata.' });
+      return;
+    }
+    if (!found.guestEmail) {
+      res.status(400).json({ error: 'Questa prenotazione non contiene un indirizzo email ospite.' });
+      return;
+    }
+    const suite = dbState.suites.find((s) => s.id === found.suiteId);
+    if (!suite) {
+      res.status(404).json({ error: 'Suite collegata non trovata.' });
+      return;
+    }
+    const location = dbState.locations.find((l) => l.id === suite.locationId);
+    const emailStatus = await inviaEmailConfermaResend({
+      resendApiKey: process.env.RESEND_API_KEY,
+      fromEmail: process.env.EMAIL_FROM,
+      hostNotificationEmail: process.env.HOST_NOTIFICATION_EMAIL,
+      booking: found,
+      suite,
+      location,
+    });
+    if (emailStatus.sent) {
+      found.confirmationEmailSentAt = new Date().toISOString();
+      saveLocalDb(dbState);
+    }
+    res.json({ booking: found, emailStatus });
   });
 
   app.delete('/api/host/bookings/:id', requireHostAuth, (req, res) => {

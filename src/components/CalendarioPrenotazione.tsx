@@ -5,9 +5,11 @@ import {
   ChevronRight,
   CreditCard,
   Lock,
+  Mail,
   ShieldCheck,
   X,
 } from 'lucide-react';
+import { generaEmailConferma } from '../EMAIL_CONFERMA';
 import type { AvailabilityBlock, BookingRecord, Suite, SuiteLocation } from '../types';
 
 interface CalendarioPrenotazioneProps {
@@ -88,6 +90,12 @@ export function CalendarioPrenotazione({
   const [cardExpiry, setCardExpiry] = useState('12/28');
   const [cardCvc, setCardCvc] = useState('424');
   const [confirmedBooking, setConfirmedBooking] = useState<BookingRecord | null>(null);
+  const [emailStatus, setEmailStatus] = useState<{
+    sent: boolean;
+    reason?: string;
+    recipient?: string;
+  } | null>(null);
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
 
   const [wlName, setWlName] = useState('');
   const [wlEmail, setWlEmail] = useState('');
@@ -278,6 +286,7 @@ export function CalendarioPrenotazione({
       const data = await res.json();
       if (res.ok) {
         setConfirmedBooking(data.booking);
+        setEmailStatus(data.emailStatus || null);
         setSandboxCheckout(null);
         setCheckIn('');
         setCheckOut('');
@@ -428,7 +437,7 @@ export function CalendarioPrenotazione({
         <div className="mt-5 p-5 bg-[#E9EFEA] border border-[#C6D5CA] text-[#1C1A17]">
           <div className="flex items-start gap-3">
             <CalendarCheck2 className="w-5 h-5 text-[#2C3E35] shrink-0 mt-0.5" />
-            <div>
+            <div className="flex-1">
               <h4 className="font-serif text-xl font-semibold text-[#1C1A17]">
                 Prenotazione Confermata
               </h4>
@@ -446,6 +455,22 @@ export function CalendarioPrenotazione({
               <p className="text-xs text-[#4B4740] mt-2 leading-relaxed">
                 Le date sono ora bloccate sul sito e aggiornate automaticamente nel feed .ics per Airbnb e Booking.com.
               </p>
+
+              <div className="mt-3 pt-3 border-t border-[#C6D5CA] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <span className="text-xs text-[#2C3E35] flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 shrink-0" />
+                  {emailStatus?.sent
+                    ? `Email di conferma inviata a ${emailStatus.recipient}`
+                    : 'Modello email di conferma pronto (attiva RESEND_API_KEY per invio automatico)'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowEmailPreview(true)}
+                  className="text-xs font-semibold text-[#2C3E35] underline underline-offset-4 hover:text-[#1A2620] cursor-pointer whitespace-nowrap shrink-0 text-left"
+                >
+                  Vedi Email di Conferma
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -797,6 +822,48 @@ export function CalendarioPrenotazione({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showEmailPreview && confirmedBooking && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-[#FFFFFF] border border-[#D8D3C8] max-w-2xl w-full shadow-xl flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-[#E6E2DA] flex items-center justify-between gap-4">
+              <div>
+                <div className="text-[11px] font-mono text-[#666158]">
+                  Modello da src/EMAIL_CONFERMA.ts
+                </div>
+                <div className="text-sm font-medium text-[#1C1A17]">
+                  {
+                    generaEmailConferma({
+                      booking: confirmedBooking,
+                      suite,
+                      location,
+                    }).subject
+                  }
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEmailPreview(false)}
+                className="p-1.5 text-[#666158] hover:text-[#1C1A17] cursor-pointer"
+                aria-label="Chiudi anteprima email"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <iframe
+              title="Anteprima Email di Conferma"
+              srcDoc={
+                generaEmailConferma({
+                  booking: confirmedBooking,
+                  suite,
+                  location,
+                }).html
+              }
+              className="w-full h-[520px] border-0 bg-[#FAF9F6]"
+            />
           </div>
         </div>
       )}

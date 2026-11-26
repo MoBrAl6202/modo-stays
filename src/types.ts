@@ -71,6 +71,7 @@ export interface BookingRecord {
   stripeSessionId?: string;
   externalUid?: string;
   notes?: string;
+  confirmationEmailSentAt?: string | null;
   createdAt: string;
 }
 
@@ -104,4 +105,5 @@ export interface SystemIntegrationStatus {
   appBaseUrl: string;
   autoSyncIntervalMinutes: number;
   mapEmbedUrl?: string;
+  emailConfigured?: boolean;
 }

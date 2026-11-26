@@ -16,6 +16,7 @@ import {
   type SuiteUpdatePatch,
 } from '../../shared/motore-ical-e-dati.ts';
 import { BRAND_INFO } from '../../src/CONTENUTI_ALLOGGI.ts';
+import { inviaEmailConfermaResend } from '../../src/EMAIL_CONFERMA.ts';
 import type {
   BookingRecord,
   GeoCoordinates,
@@ -37,6 +38,9 @@ interface CloudflareEnv {
   GOOGLE_MAPS_API_KEY?: string;
   VITE_GOOGLE_MAPS_API_KEY?: string;
   APP_URL?: string;
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
+  HOST_NOTIFICATION_EMAIL?: string;
 }
 
 interface PagesEventContext {
@@ -310,6 +314,23 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
         if (found) {
           found.paymentStatus = 'paid';
           found.stripeSessionId = event.data?.object?.id;
+          if (!found.confirmationEmailSentAt && found.guestEmail) {
+            const suite = state.suites.find((s) => s.id === found.suiteId);
+            if (suite) {
+              const location = state.locations.find((l) => l.id === suite.locationId);
+              const emailRes = await inviaEmailConfermaResend({
+                resendApiKey: env.RESEND_API_KEY,
+                fromEmail: env.EMAIL_FROM,
+                hostNotificationEmail: env.HOST_NOTIFICATION_EMAIL,
+                booking: found,
+                suite,
+                location,
+              });
+              if (emailRes.sent) {
+                found.confirmationEmailSentAt = new Date().toISOString();
+              }
+            }
+          }
           await saveState(env, state);
         }
       }
@@ -503,8 +524,33 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
     if (!found) return jsonResponse({ error: 'Prenotazione non trovata.' }, 404);
     found.paymentStatus = 'paid';
     found.stripeSessionId = `cs_sandbox_${body.cardLast4 || '4242'}_${Date.now()}`;
+
+    const suite = state.suites.find((s) => s.id === found.suiteId);
+    const location = suite
+      ? state.locations.find((l) => l.id === suite.locationId)
+      : undefined;
+
+    let emailStatus: { sent: boolean; reason?: string; recipient?: string } = {
+      sent: false,
+      reason: 'missing_suite',
+      recipient: found.guestEmail,
+    };
+    if (suite) {
+      emailStatus = await inviaEmailConfermaResend({
+        resendApiKey: env.RESEND_API_KEY,
+        fromEmail: env.EMAIL_FROM,
+        hostNotificationEmail: env.HOST_NOTIFICATION_EMAIL,
+        booking: found,
+        suite,
+        location,
+      });
+      if (emailStatus.sent) {
+        found.confirmationEmailSentAt = new Date().toISOString();
+      }
+    }
+
     await saveState(env, state);
-    return jsonResponse({ booking: found });
+    return jsonResponse({ booking: found, emailStatus });
   }
 
   const pendingMatch = pathname.match(/^\/api\/bookings\/pending\/([^/]+)$/);
@@ -604,6 +650,7 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
           appBaseUrl: resolveAppBaseUrl(request, env),
           autoSyncIntervalMinutes: AUTO_SYNC_INTERVAL_MINUTES,
           mapEmbedUrl: convertiLinkMyMaps(state.mapEmbedUrl ?? BRAND_INFO.mappaMyMapsUrl),
+          emailConfigured: Boolean(env.RESEND_API_KEY),
         },
       });
     }
@@ -741,6 +788,38 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
       state.bookings.push(block);
       await saveState(env, state);
       return jsonResponse({ block, conflicts: detectConflicts(state) }, 201);
+    }
+
+    const sendEmailMatch = pathname.match(
+      /^\/api\/host\/bookings\/([^/]+)\/send-confirmation$/
+    );
+    if (sendEmailMatch && method === 'POST') {
+      const id = decodeURIComponent(sendEmailMatch[1]);
+      const state = await loadState(env);
+      const found = state.bookings.find((b) => b.id === id);
+      if (!found) return jsonResponse({ error: 'Prenotazione non trovata.' }, 404);
+      if (!found.guestEmail) {
+        return jsonResponse(
+          { error: 'Questa prenotazione non contiene un indirizzo email ospite.' },
+          400
+        );
+      }
+      const suite = state.suites.find((s) => s.id === found.suiteId);
+      if (!suite) return jsonResponse({ error: 'Suite collegata non trovata.' }, 404);
+      const location = state.locations.find((l) => l.id === suite.locationId);
+      const emailStatus = await inviaEmailConfermaResend({
+        resendApiKey: env.RESEND_API_KEY,
+        fromEmail: env.EMAIL_FROM,
+        hostNotificationEmail: env.HOST_NOTIFICATION_EMAIL,
+        booking: found,
+        suite,
+        location,
+      });
+      if (emailStatus.sent) {
+        found.confirmationEmailSentAt = new Date().toISOString();
+        await saveState(env, state);
+      }
+      return jsonResponse({ booking: found, emailStatus });
     }
 
     const deleteBookingMatch = pathname.match(/^\/api\/host\/bookings\/([^/]+)$/);

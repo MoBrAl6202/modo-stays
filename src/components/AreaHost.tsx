@@ -12,12 +12,14 @@ import {
   KeyRound,
   Lock,
   LogOut,
+  Mail,
   MapPin,
   Plus,
   RefreshCw,
   Trash2,
 } from 'lucide-react';
 import { BRAND_INFO, FOTO_ALLOGGI } from '../CONTENUTI_ALLOGGI';
+import { generaEmailConferma } from '../EMAIL_CONFERMA';
 import type {
   BookingChannel,
   BookingConflict,
@@ -136,6 +138,10 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
   const [savingSuite, setSavingSuite] = useState(false);
   const [mapUrlDraft, setMapUrlDraft] = useState<string>(BRAND_INFO.mappaMyMapsUrl);
   const [savingMapUrl, setSavingMapUrl] = useState(false);
+  const [emailPreviewBooking, setEmailPreviewBooking] = useState<BookingRecord | null>(
+    null
+  );
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   const [suiteDraft, setSuiteDraft] = useState<{
     name: string;
     subtitle: string;
@@ -547,6 +553,38 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
       }
     } finally {
       setSavingMapUrl(false);
+    }
+  };
+
+  const handleSendConfirmationEmail = async (bookingId: string) => {
+    setSendingEmailId(bookingId);
+    setSyncMessage('');
+    setSyncError('');
+    try {
+      const res = await fetch(`/api/host/bookings/${bookingId}/send-confirmation`, {
+        method: 'POST',
+        headers: { 'x-host-code': hostCode },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSyncError(data.error || 'Impossibile inviare l’email di conferma.');
+        return;
+      }
+      if (data.emailStatus?.sent) {
+        setSyncMessage(`Email di conferma inviata a ${data.emailStatus.recipient}.`);
+        await fetchHostData(hostCode);
+        if (emailPreviewBooking?.id === bookingId) {
+          setEmailPreviewBooking(data.booking);
+        }
+      } else {
+        setSyncError(
+          data.emailStatus?.reason === 'missing_api_key'
+            ? 'Invio reale non ancora attivo: aggiungi RESEND_API_KEY su Cloudflare (vedi guida).'
+            : `Invio email non riuscito: ${data.emailStatus?.reason || 'errore sconosciuto'}`
+        );
+      }
+    } finally {
+      setSendingEmailId(null);
     }
   };
 
@@ -1592,8 +1630,8 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
       {/* TAB 4: LEDGER, STRIPE STATUS & WAITLIST */}
       {activeTab === 'ledger' && (
         <div className="space-y-8">
-          <div className="border border-[#E6E2DA] bg-[#FFFFFF] p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="border border-[#E6E2DA] bg-[#FFFFFF] p-6 flex flex-col justify-between gap-4">
               <div>
                 <div className="text-xs font-medium text-[#666158]">
                   Infrastruttura Pagamenti
@@ -1601,16 +1639,37 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
                 <h3 className="font-serif text-2xl font-medium text-[#1C1A17] mt-1">
                   Stato Integrazione Stripe Checkout
                 </h3>
-                <p className="text-xs text-[#666158] mt-2 max-w-2xl leading-relaxed">
+                <p className="text-xs text-[#666158] mt-2 leading-relaxed">
                   {integrationStatus?.stripeConfigured
                     ? 'STRIPE_SECRET_KEY rilevata nel backend: il sito crea sessioni Stripe Checkout reali per incassi con carta di credito.'
-                    : 'Il backend espone già /api/bookings/checkout e /api/webhooks/stripe. Al momento è attiva la modalità Sandbox Test; per incassi reali aggiungi STRIPE_SECRET_KEY su Cloudflare.'}
+                    : 'Al momento è attiva la modalità Sandbox Test. Per incassi reali aggiungi STRIPE_SECRET_KEY su Cloudflare.'}
                 </p>
               </div>
-              <div className="px-4 py-2.5 border border-[#D8D3C8] bg-[#FAF9F6] text-xs font-mono text-[#1C1A17] shrink-0">
+              <div className="px-4 py-2 border border-[#D8D3C8] bg-[#FAF9F6] text-xs font-mono text-[#1C1A17] self-start">
                 {integrationStatus?.stripeConfigured
-                  ? 'Modalità: Stripe API Attiva'
-                  : 'Modalità: Stripe Sandbox Preview'}
+                  ? 'Stripe API: Attivo'
+                  : 'Stripe: Modalità Prova (Sandbox)'}
+              </div>
+            </div>
+
+            <div className="border border-[#E6E2DA] bg-[#FFFFFF] p-6 flex flex-col justify-between gap-4">
+              <div>
+                <div className="text-xs font-medium text-[#666158]">
+                  File Modello: <span className="font-mono">src/EMAIL_CONFERMA.ts</span>
+                </div>
+                <h3 className="font-serif text-2xl font-medium text-[#1C1A17] mt-1">
+                  Email Automatiche di Conferma
+                </h3>
+                <p className="text-xs text-[#666158] mt-2 leading-relaxed">
+                  {integrationStatus?.emailConfigured
+                    ? 'RESEND_API_KEY configurata: ogni prenotazione confermata invia automaticamente l’email HTML all’ospite.'
+                    : 'Il file src/EMAIL_CONFERMA.ts genera già l’email completa. Aggiungi RESEND_API_KEY su Cloudflare per spedirla automaticamente nella casella dell’ospite.'}
+                </p>
+              </div>
+              <div className="px-4 py-2 border border-[#D8D3C8] bg-[#FAF9F6] text-xs font-mono text-[#1C1A17] self-start">
+                {integrationStatus?.emailConfigured
+                  ? 'Invio Email Resend: Attivo'
+                  : 'Email: Solo Anteprima (manca RESEND_API_KEY)'}
               </div>
             </div>
           </div>
@@ -1644,13 +1703,27 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
                     <td className={`py-3 px-4 font-semibold ${CHANNEL_META[b.channel].badgeClass}`}>
                       {CHANNEL_META[b.channel].label}
                     </td>
-                    <td className="py-3 px-4 text-[#1C1A17]">{b.guestName}</td>
+                    <td className="py-3 px-4 text-[#1C1A17]">
+                      <div>{b.guestName}</div>
+                      {b.guestEmail && (
+                        <div className="text-[11px] text-[#666158]">{b.guestEmail}</div>
+                      )}
+                    </td>
                     <td className="py-3 px-4 font-mono tabular-nums">{b.checkIn}</td>
                     <td className="py-3 px-4 font-mono tabular-nums">{b.checkOut}</td>
                     <td className="py-3 px-4 text-right font-mono tabular-nums">
                       {b.totalAmountEur > 0 ? `€${b.totalAmountEur}` : 'Esterno'}
                     </td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-4 text-right space-x-3 whitespace-nowrap">
+                      {b.guestEmail && (
+                        <button
+                          type="button"
+                          onClick={() => setEmailPreviewBooking(b)}
+                          className="text-[#2C3E35] font-medium hover:underline cursor-pointer"
+                        >
+                          {b.confirmationEmailSentAt ? 'Email Inviata' : 'Vedi/Invia Email'}
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleDeleteBooking(b.id)}
@@ -1806,6 +1879,58 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
           </div>
         </div>
       )}
+
+      {emailPreviewBooking && (() => {
+        const suiteObj = suites.find((s) => s.id === emailPreviewBooking.suiteId);
+        if (!suiteObj) return null;
+        const preview = generaEmailConferma({
+          booking: emailPreviewBooking,
+          suite: suiteObj,
+        });
+        return (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div className="bg-[#FFFFFF] border border-[#D8D3C8] max-w-2xl w-full shadow-xl flex flex-col max-h-[90vh]">
+              <div className="p-4 border-b border-[#E6E2DA] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-mono text-[#666158]">
+                    Destinatario: {emailPreviewBooking.guestEmail} · Modello: src/EMAIL_CONFERMA.ts
+                  </div>
+                  <div className="text-sm font-medium text-[#1C1A17] mt-0.5">
+                    {preview.subject}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    type="button"
+                    disabled={sendingEmailId === emailPreviewBooking.id}
+                    onClick={() => handleSendConfirmationEmail(emailPreviewBooking.id)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#2C3E35] text-[#FAF9F6] text-xs font-medium hover:bg-[#1F2D26] cursor-pointer disabled:opacity-60"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    {sendingEmailId === emailPreviewBooking.id
+                      ? 'Invio...'
+                      : emailPreviewBooking.confirmationEmailSentAt
+                      ? 'Reinvia Email'
+                      : 'Invia Email Ora'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEmailPreviewBooking(null)}
+                    className="text-xs text-[#666158] hover:text-[#1C1A17] cursor-pointer"
+                  >
+                    Chiudi
+                  </button>
+                </div>
+              </div>
+              <iframe
+                title="Anteprima Email Conferma Host"
+                srcDoc={preview.html}
+                className="w-full h-[500px] border-0 bg-[#FAF9F6]"
+              />
+            </div>
+          </div>
+        );
+      })()}
     </section>
   );
 }
