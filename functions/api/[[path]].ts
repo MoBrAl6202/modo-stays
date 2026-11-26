@@ -16,7 +16,10 @@ import {
   type SuiteUpdatePatch,
 } from '../../shared/motore-ical-e-dati.ts';
 import { BRAND_INFO } from '../../src/CONTENUTI_ALLOGGI.ts';
-import { inviaEmailConfermaResend } from '../../src/EMAIL_CONFERMA.ts';
+import {
+  IMPOSTAZIONI_EMAIL,
+  inviaEmailConfermaResend,
+} from '../../src/EMAIL_CONFERMA.ts';
 import type {
   BookingRecord,
   GeoCoordinates,
@@ -657,6 +660,18 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
           autoSyncIntervalMinutes: AUTO_SYNC_INTERVAL_MINUTES,
           mapEmbedUrl: convertiLinkMyMaps(state.mapEmbedUrl ?? BRAND_INFO.mappaMyMapsUrl),
           emailConfigured: Boolean(env.GMAIL_WEBHOOK_URL || env.RESEND_API_KEY),
+          emailProvider: env.GMAIL_WEBHOOK_URL
+            ? 'gmail_webhook'
+            : env.RESEND_API_KEY
+            ? 'resend'
+            : 'none',
+          hostNotificationConfigured: Boolean(
+            (
+              env.HOST_NOTIFICATION_EMAIL ||
+              IMPOSTAZIONI_EMAIL.emailNotificaHost ||
+              ''
+            ).trim()
+          ),
         },
       });
     }
@@ -828,6 +843,79 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
         await saveState(env, state);
       }
       return jsonResponse({ booking: found, emailStatus });
+    }
+
+    if (pathname === '/api/host/test-email' && method === 'POST') {
+      const body = (await request.json().catch(() => ({}))) as {
+        testEmail?: string;
+      };
+      const targetEmail = (
+        body.testEmail ||
+        env.HOST_NOTIFICATION_EMAIL ||
+        IMPOSTAZIONI_EMAIL.emailNotificaHost ||
+        ''
+      ).trim();
+
+      if (!targetEmail || !targetEmail.includes('@')) {
+        return jsonResponse(
+          { error: 'Inserisci un indirizzo email valido su cui fare il test.' },
+          400
+        );
+      }
+
+      const state = await loadState(env);
+      const suite = state.suites.find((s) => s.status === 'open') || state.suites[0];
+      if (!suite) {
+        return jsonResponse({ error: 'Nessuna suite disponibile per il test.' }, 404);
+      }
+      const location = state.locations.find((l) => l.id === suite.locationId);
+
+      const testBooking: BookingRecord = {
+        id: `TEST-${new Date().getFullYear()}`,
+        suiteId: suite.id,
+        channel: 'direct',
+        checkIn: '2027-05-10',
+        checkOut: '2027-05-13',
+        guestName: 'Ospite Test Modo Stays',
+        guestEmail: targetEmail,
+        guestPhone: '+39 000 000 0000',
+        guestsCount: 2,
+        totalAmountEur:
+          suite.pricePerNight * 3 + suite.cleaningFee + suite.cityTaxPerNight * 3,
+        paymentStatus: 'paid',
+        stripeSessionId: 'cs_sandbox_test',
+        notes: 'Email diagnostica inviata dall’Area Host',
+        createdAt: new Date().toISOString(),
+      };
+
+      const emailStatus = await inviaEmailConfermaResend({
+        gmailWebhookUrl: env.GMAIL_WEBHOOK_URL,
+        gmailWebhookSecret: env.GMAIL_WEBHOOK_SECRET,
+        resendApiKey: env.RESEND_API_KEY,
+        fromEmail: env.EMAIL_FROM,
+        hostNotificationEmail: env.HOST_NOTIFICATION_EMAIL,
+        booking: testBooking,
+        suite,
+        location,
+      });
+
+      const emailProvider = env.GMAIL_WEBHOOK_URL
+        ? 'gmail_webhook'
+        : env.RESEND_API_KEY
+        ? 'resend'
+        : 'none';
+
+      return jsonResponse({
+        emailProvider,
+        hostNotificationConfigured: Boolean(
+          (
+            env.HOST_NOTIFICATION_EMAIL ||
+            IMPOSTAZIONI_EMAIL.emailNotificaHost ||
+            ''
+          ).trim()
+        ),
+        emailStatus,
+      });
     }
 
     const deleteBookingMatch = pathname.match(/^\/api\/host\/bookings\/([^/]+)$/);

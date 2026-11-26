@@ -142,6 +142,12 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
     null
   );
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
+  const [testEmailInput, setTestEmailInput] = useState('');
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testEmailOutcome, setTestEmailOutcome] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
   const [suiteDraft, setSuiteDraft] = useState<{
     name: string;
     subtitle: string;
@@ -591,6 +597,58 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
       }
     } finally {
       setSendingEmailId(null);
+    }
+  };
+
+  const handleSendTestEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTestingEmail(true);
+    setTestEmailOutcome(null);
+    try {
+      const res = await fetch('/api/host/test-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-host-code': hostCode,
+        },
+        body: JSON.stringify({ testEmail: testEmailInput.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTestEmailOutcome({
+          ok: false,
+          message: data.error || 'Errore durante il test email.',
+        });
+        return;
+      }
+      if (data.emailStatus?.sent) {
+        setTestEmailOutcome({
+          ok: true,
+          message: `Test riuscito! Email spedita a ${data.emailStatus.recipient}${
+            data.emailStatus.hostNotified
+              ? ' (e copia avviso inviata anche all’Host)'
+              : ''
+          }. Controlla la casella e anche Spam/Promozioni.`,
+        });
+      } else {
+        const reason = data.emailStatus?.reason;
+        setTestEmailOutcome({
+          ok: false,
+          message:
+            reason === 'missing_api_key'
+              ? 'Cloudflare non vede ancora GMAIL_WEBHOOK_URL (né RESEND_API_KEY). Aggiungila in Variables and Secrets (Production) e fai Retry deployment.'
+              : `Invio fallito (${data.emailProvider || 'none'}): ${
+                  reason || 'errore sconosciuto'
+                }`,
+        });
+      }
+    } catch {
+      setTestEmailOutcome({
+        ok: false,
+        message: 'Errore di connessione verso /api/host/test-email.',
+      });
+    } finally {
+      setTestingEmail(false);
     }
   };
 
@@ -1667,16 +1725,65 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
                   Email Automatiche di Conferma
                 </h3>
                 <p className="text-xs text-[#666158] mt-2 leading-relaxed">
-                  {integrationStatus?.emailConfigured
-                    ? 'Invio automatico attivo: ogni prenotazione confermata spedisce l’email HTML all’ospite e la notifica all’Host.'
+                  {integrationStatus?.emailProvider === 'gmail_webhook'
+                    ? 'Gmail Webhook attivo (GMAIL_WEBHOOK_URL): spedisce le email di conferma a qualsiasi ospite senza bisogno di dominio, più la copia all’Host.'
+                    : integrationStatus?.emailProvider === 'resend'
+                    ? 'Al momento è attivo solo Resend (senza dominio proprio invia solo alla tua email personale). Aggiungi GMAIL_WEBHOOK_URL su Cloudflare per inviare a tutti i clienti.'
                     : 'Il file src/EMAIL_CONFERMA.ts genera già l’email completa. Aggiungi GMAIL_WEBHOOK_URL su Cloudflare (gratis, senza comprare alcun dominio!) per inviarla a qualsiasi ospite.'}
                 </p>
               </div>
-              <div className="px-4 py-2 border border-[#D8D3C8] bg-[#FAF9F6] text-xs font-mono text-[#1C1A17] self-start">
-                {integrationStatus?.emailConfigured
-                  ? 'Invio Email: Attivo'
-                  : 'Email: Solo Anteprima (manca GMAIL_WEBHOOK_URL)'}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="px-3.5 py-2 border border-[#D8D3C8] bg-[#FAF9F6] text-xs font-mono text-[#1C1A17]">
+                  {integrationStatus?.emailProvider === 'gmail_webhook'
+                    ? 'Attivo: Gmail (Senza Dominio)'
+                    : integrationStatus?.emailProvider === 'resend'
+                    ? 'Attivo: Solo Resend (serve dominio per ospiti)'
+                    : 'Email: Solo Anteprima (manca GMAIL_WEBHOOK_URL)'}
+                </div>
+                <div className="px-3.5 py-2 border border-[#D8D3C8] bg-[#FAF9F6] text-xs font-mono text-[#4B4740]">
+                  Notifica Host:{' '}
+                  {integrationStatus?.hostNotificationConfigured ? 'Attiva' : 'Non impostata'}
+                </div>
               </div>
+
+              <form
+                onSubmit={handleSendTestEmail}
+                className="pt-3 border-t border-[#E6E2DA] space-y-2.5"
+              >
+                <div className="text-[11px] font-medium text-[#4B4740]">
+                  Test rapido invio reale (verifica subito cosa risponde Gmail/Cloudflare):
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="email"
+                    required
+                    value={testEmailInput}
+                    onChange={(e) => setTestEmailInput(e.target.value)}
+                    placeholder="email-amico@gmail.com"
+                    className="flex-1 px-3 py-2 text-xs bg-[#FAF9F6] border border-[#D8D3C8] focus:outline-none focus:border-[#2C3E35]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={testingEmail}
+                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-[#2C3E35] text-[#FAF9F6] text-xs font-medium hover:bg-[#1F2D26] whitespace-nowrap cursor-pointer disabled:opacity-60"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    {testingEmail ? 'Invio test...' : 'Invia Email di Test'}
+                  </button>
+                </div>
+                {testEmailOutcome && (
+                  <div
+                    className={`p-3 border text-xs leading-relaxed ${
+                      testEmailOutcome.ok
+                        ? 'bg-[#E9EFEA] border-[#C6D5CA] text-[#1F2D26]'
+                        : 'bg-[#FBF0EE] border-[#E7C6C0] text-[#8E3528]'
+                    }`}
+                  >
+                    {testEmailOutcome.message}
+                  </div>
+                )}
+              </form>
             </div>
           </div>
 

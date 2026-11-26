@@ -240,6 +240,7 @@ export function generaEmailConferma(params: {
 export interface SendConfirmationEmailResult {
   sent: boolean;
   hostNotified?: boolean;
+  provider?: 'gmail_webhook' | 'resend' | 'none';
   reason?: string;
   providerId?: string;
   recipient?: string;
@@ -263,6 +264,7 @@ export async function inviaEmailConfermaResend(params: {
   if (!recipient) {
     return {
       sent: false,
+      provider: 'none',
       reason: 'missing_guest_email',
       subject: generated.subject,
     };
@@ -292,11 +294,39 @@ export async function inviaEmailConfermaResend(params: {
   ].join('\n');
 
   // 1) METODO SENZA DOMINIO: Google Apps Script / Gmail (gratis, invia a chiunque)
-  if (params.gmailWebhookUrl && params.gmailWebhookUrl.trim()) {
+  const webhookUrl = (params.gmailWebhookUrl || '').trim();
+  if (webhookUrl) {
+    if (!webhookUrl.startsWith('https://')) {
+      return {
+        sent: false,
+        provider: 'gmail_webhook',
+        reason:
+          'L’URL GMAIL_WEBHOOK_URL non inizia con https:// — controlla il valore inserito su Cloudflare.',
+        recipient,
+        subject: generated.subject,
+      };
+    }
+
+    if (
+      webhookUrl.includes('script.google.com') &&
+      (webhookUrl.endsWith('/edit') ||
+        !webhookUrl.includes('/macros/s/') ||
+        !webhookUrl.includes('/exec'))
+    ) {
+      return {
+        sent: false,
+        provider: 'gmail_webhook',
+        reason:
+          'GMAIL_WEBHOOK_URL non è l’URL dell’App Web: deve contenere /macros/s/... e finire con /exec (non /edit).',
+        recipient,
+        subject: generated.subject,
+      };
+    }
+
     try {
-      const response = await fetch(params.gmailWebhookUrl.trim(), {
+      const response = await fetch(webhookUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           secret: (params.gmailWebhookSecret || '').trim(),
           to: recipient,
@@ -312,8 +342,11 @@ export async function inviaEmailConfermaResend(params: {
       });
 
       const rawText = await response.text();
-      let parsed: { ok?: boolean; error?: string; hostNotified?: boolean } | null =
-        null;
+      let parsed: {
+        ok?: boolean;
+        error?: string;
+        hostNotified?: boolean;
+      } | null = null;
       try {
         parsed = JSON.parse(rawText) as {
           ok?: boolean;
@@ -324,24 +357,59 @@ export async function inviaEmailConfermaResend(params: {
         parsed = null;
       }
 
-      if (response.ok && (!parsed || parsed.ok !== false)) {
+      if (response.ok && parsed !== null && parsed.ok === true) {
         return {
           sent: true,
-          hostNotified: parsed?.hostNotified ?? Boolean(hostEmail),
+          provider: 'gmail_webhook',
+          hostNotified: parsed.hostNotified ?? Boolean(hostEmail),
           recipient,
           subject: generated.subject,
         };
       }
 
+      let diagnosticReason = parsed?.error || '';
+      if (!diagnosticReason) {
+        if (
+          rawText.includes('accounts.google.com') ||
+          rawText.includes('ServiceLogin') ||
+          response.status === 401 ||
+          response.status === 403
+        ) {
+          diagnosticReason =
+            'Google Apps Script ha bloccato l’accesso: su script.google.com → Gestisci deployment imposta "Chi può accedere: Chiunque" (non "Solo io").';
+        } else if (rawText.includes('Script function not found: doPost')) {
+          diagnosticReason =
+            'Funzione doPost non trovata su Google Apps Script: incolla il codice della Sezione 7, salva e crea un Nuovo deployment.';
+        } else if (
+          rawText.includes('Authorization is required') ||
+          rawText.includes('autorizzazione')
+        ) {
+          diagnosticReason =
+            'Manca l’autorizzazione Gmail su Google Apps Script: autorizza lo script su script.google.com e crea un Nuovo deployment.';
+        } else if (rawText.trim().startsWith('<')) {
+          const titleMatch = rawText.match(/<title[^>]*>([^<]+)<\/title>/i);
+          const titleHint = titleMatch?.[1]?.trim();
+          diagnosticReason = `Risposta HTML inattesa da Google Apps Script (HTTP ${response.status}${
+            titleHint ? ` · ${titleHint}` : ''
+          }). Verifica che GMAIL_WEBHOOK_URL finisca con /exec e che "Chi può accedere" sia "Chiunque".`;
+        } else {
+          diagnosticReason = `Errore Gmail Webhook HTTP ${response.status}${
+            rawText ? `: ${rawText.slice(0, 140)}` : ''
+          }`;
+        }
+      }
+
       return {
         sent: false,
-        reason: parsed?.error || `Errore Gmail Webhook HTTP ${response.status}`,
+        provider: 'gmail_webhook',
+        reason: diagnosticReason,
         recipient,
         subject: generated.subject,
       };
     } catch (err) {
       return {
         sent: false,
+        provider: 'gmail_webhook',
         reason: err instanceof Error ? err.message : 'Errore connessione Gmail',
         recipient,
         subject: generated.subject,

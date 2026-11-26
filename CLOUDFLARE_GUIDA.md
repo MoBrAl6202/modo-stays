@@ -140,27 +140,33 @@ Se non vuoi acquistare un dominio internet (es. `.com` / `.it`), Cloudflare e se
 
 ```javascript
 function doPost(e) {
-  var data = JSON.parse(e.postData.contents);
-  MailApp.sendEmail({
-    to: data.to,
-    subject: data.subject,
-    body: data.text,
-    htmlBody: data.html,
-    name: data.senderName || 'Modo Stays'
-  });
-  var hostNotified = false;
-  if (data.hostEmail) {
+  try {
+    var data = JSON.parse(e.postData.contents);
     MailApp.sendEmail({
-      to: data.hostEmail,
-      subject: data.hostSubject,
-      body: data.hostText,
+      to: data.to,
+      subject: data.subject,
+      body: data.text,
+      htmlBody: data.html,
       name: data.senderName || 'Modo Stays'
     });
-    hostNotified = true;
+    var hostNotified = false;
+    if (data.hostEmail) {
+      MailApp.sendEmail({
+        to: data.hostEmail,
+        subject: data.hostSubject,
+        body: data.hostText,
+        name: data.senderName || 'Modo Stays'
+      });
+      hostNotified = true;
+    }
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: true, hostNotified: hostNotified }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: String(err) }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
-  return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, hostNotified: hostNotified }))
-    .setMimeType(ContentService.MimeType.JSON);
 }
 ```
 
@@ -188,10 +194,17 @@ function doPost(e) {
 4. *(Se prima avevi aggiunto `RESEND_API_KEY`, puoi lasciarla o eliminarla: il sito usa automaticamente `GMAIL_WEBHOOK_URL` appena è presente).*
 5. Vai nella scheda **Deployments** → clicca sui tre puntini `...` dell'ultimo deploy → **Retry deployment**.
 
-#### Passo 3 — Fai la prova finale
-1. Apri il sito pubblico, prenota due date con la carta finta (`4242...`) inserendo anche l'email di un tuo amico.
-2. Il tuo amico riceverà subito l'email di conferma di **Modo Stays** e tu riceverai nella tua Gmail la notifica con tutti i suoi dati!
+#### Passo 3 — Fai la prova finale (o usa il tasto Test in Area Host)
+1. Apri il tuo sito → entra in **Area Host** → scheda **`Registro & Stripe`**.
+2. Controlla che il riquadro delle email dica **`Attivo: Gmail (Senza Dominio)`**, scrivi l'email di un amico nella casella **Test rapido invio reale** e premi **`Invia Email di Test`**.
+3. Se vedi verde, il tuo amico riceverà subito l'email (controllando anche Spam/Promozioni) e nella tua **Gmail → Posta inviata** vedrai la mail appena spedita! Se c'è un problema (es. `Chi può accedere` non è su `Chiunque`), il riquadro ti dirà esattamente cosa correggere.
+
+#### Se l'email arriva solo a te o non ne partono più
+- **1. Controlla che in Area Host non dica ancora "Solo Resend":** se su **Registro & Stripe** leggi `Solo Resend`, vuol dire che devi esportare l'ultima versione su GitHub oppure che `GMAIL_WEBHOOK_URL` non è salvata su **Production** (ricordati poi **Retry deployment**).
+- **2. Controlla "Chi può accedere: Chiunque" su Google Apps Script:** torna su `script.google.com` → **Esegui il deployment** → **Gestisci deployment** → icona **Matita** → verifica che **Chi può accedere** sia **`Chiunque`** (non *Solo io*!) e che l'URL copiato su Cloudflare finisca con **`/exec`** (non `/edit`).
+- **3. Guarda "Posta inviata" nella tua Gmail:** tutto ciò che parte tramite Google Apps Script compare sempre dentro la tua cartella **Posta inviata** di Gmail.
 
 *(Se in futuro vuoi modificare le frasi, gli orari o la firma dell'email, apri **`src/EMAIL_CONFERMA.ts`** su GitHub.)*
+
 
 

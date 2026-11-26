@@ -458,12 +458,20 @@ export function CalendarioPrenotazione({
               </p>
 
               <div className="mt-3 pt-3 border-t border-[#C6D5CA] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <span className="text-xs text-[#2C3E35] flex items-center gap-1.5">
+                <span
+                  className={`text-xs flex items-center gap-1.5 ${
+                    emailStatus &&
+                    !emailStatus.sent &&
+                    emailStatus.reason !== 'missing_api_key'
+                      ? 'text-[#8E3528] font-medium'
+                      : 'text-[#2C3E35]'
+                  }`}
+                >
                   <Mail className="w-3.5 h-3.5 shrink-0" />
                   {emailStatus?.sent
                     ? `Email di conferma inviata a ${emailStatus.recipient}`
                     : emailStatus?.reason && emailStatus.reason !== 'missing_api_key'
-                    ? `Nota invio email: ${emailStatus.reason}${
+                    ? `Attenzione invio email: ${emailStatus.reason}${
                         emailStatus.hostNotified ? ' (avviso host inviato)' : ''
                       }`
                     : 'Modello email di conferma pronto (collega GMAIL_WEBHOOK_URL su Cloudflare per invio automatico)'}

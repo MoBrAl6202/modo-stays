@@ -106,4 +106,6 @@ export interface SystemIntegrationStatus {
   autoSyncIntervalMinutes: number;
   mapEmbedUrl?: string;
   emailConfigured?: boolean;
+  emailProvider?: 'gmail_webhook' | 'resend' | 'none';
+  hostNotificationConfigured?: boolean;
 }

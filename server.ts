@@ -22,8 +22,11 @@ import {
   type SuiteUpdatePatch,
 } from './shared/motore-ical-e-dati.ts';
 import { BRAND_INFO } from './src/CONTENUTI_ALLOGGI.ts';
-import { inviaEmailConfermaResend } from './src/EMAIL_CONFERMA.ts';
-import type { GeoCoordinates, SuiteLocation } from './src/types.ts';
+import {
+  IMPOSTAZIONI_EMAIL,
+  inviaEmailConfermaResend,
+} from './src/EMAIL_CONFERMA.ts';
+import type { BookingRecord, GeoCoordinates, SuiteLocation } from './src/types.ts';
 
 dotenv.config();
 
@@ -577,6 +580,18 @@ async function startServer(): Promise<void> {
         emailConfigured: Boolean(
           process.env.GMAIL_WEBHOOK_URL || process.env.RESEND_API_KEY
         ),
+        emailProvider: process.env.GMAIL_WEBHOOK_URL
+          ? 'gmail_webhook'
+          : process.env.RESEND_API_KEY
+          ? 'resend'
+          : 'none',
+        hostNotificationConfigured: Boolean(
+          (
+            process.env.HOST_NOTIFICATION_EMAIL ||
+            IMPOSTAZIONI_EMAIL.emailNotificaHost ||
+            ''
+          ).trim()
+        ),
       },
     });
   });
@@ -750,6 +765,77 @@ async function startServer(): Promise<void> {
       saveLocalDb(dbState);
     }
     res.json({ booking: found, emailStatus });
+  });
+
+  app.post('/api/host/test-email', requireHostAuth, async (req, res) => {
+    const { testEmail } = (req.body || {}) as { testEmail?: string };
+    const targetEmail = (
+      testEmail ||
+      process.env.HOST_NOTIFICATION_EMAIL ||
+      IMPOSTAZIONI_EMAIL.emailNotificaHost ||
+      ''
+    ).trim();
+
+    if (!targetEmail || !targetEmail.includes('@')) {
+      res.status(400).json({
+        error: 'Inserisci un indirizzo email valido su cui fare il test.',
+      });
+      return;
+    }
+
+    const suite = dbState.suites.find((s) => s.status === 'open') || dbState.suites[0];
+    if (!suite) {
+      res.status(404).json({ error: 'Nessuna suite disponibile per il test.' });
+      return;
+    }
+    const location = dbState.locations.find((l) => l.id === suite.locationId);
+
+    const testBooking: BookingRecord = {
+      id: `TEST-${new Date().getFullYear()}`,
+      suiteId: suite.id,
+      channel: 'direct',
+      checkIn: '2027-05-10',
+      checkOut: '2027-05-13',
+      guestName: 'Ospite Test Modo Stays',
+      guestEmail: targetEmail,
+      guestPhone: '+39 000 000 0000',
+      guestsCount: 2,
+      totalAmountEur:
+        suite.pricePerNight * 3 + suite.cleaningFee + suite.cityTaxPerNight * 3,
+      paymentStatus: 'paid',
+      stripeSessionId: 'cs_sandbox_test',
+      notes: 'Email diagnostica inviata dall’Area Host',
+      createdAt: new Date().toISOString(),
+    };
+
+    const emailStatus = await inviaEmailConfermaResend({
+      gmailWebhookUrl: process.env.GMAIL_WEBHOOK_URL,
+      gmailWebhookSecret: process.env.GMAIL_WEBHOOK_SECRET,
+      resendApiKey: process.env.RESEND_API_KEY,
+      fromEmail: process.env.EMAIL_FROM,
+      hostNotificationEmail: process.env.HOST_NOTIFICATION_EMAIL,
+      booking: testBooking,
+      suite,
+      location,
+    });
+
+    const emailProvider = process.env.GMAIL_WEBHOOK_URL
+      ? 'gmail_webhook'
+      : process.env.RESEND_API_KEY
+      ? 'resend'
+      : 'none';
+
+    res.json({
+      emailProvider,
+      hostNotificationConfigured: Boolean(
+        (
+          process.env.HOST_NOTIFICATION_EMAIL ||
+          IMPOSTAZIONI_EMAIL.emailNotificaHost ||
+          ''
+        ).trim()
+      ),
+      emailStatus,
+    });
   });
 
   app.delete('/api/host/bookings/:id', requireHostAuth, (req, res) => {
