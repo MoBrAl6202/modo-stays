@@ -6,14 +6,14 @@
  * Qui puoi modificare liberamente tutti i testi dell'email che riceve l'ospite
  * dopo la prenotazione.
  *
- * COME ATTIVARE L'INVIO REALE DELLE EMAIL SU CLOUDFLARE (GRATIS):
- * 1. Crea un account gratuito su https://resend.com (3.000 email/mese gratis).
- * 2. Copia la tua API Key (inizia con "re_...").
- * 3. Su Cloudflare Pages -> Settings -> Variables and Secrets aggiungi:
- *      RESEND_API_KEY = re_...
- *      EMAIL_FROM     = Modo Stays <onboarding@resend.dev>   (per i test)
- *                       oppure <prenotazioni@tuodominio.com> (con dominio tuo)
- *      HOST_NOTIFICATION_EMAIL = tua@email.com (opzionale, per ricevere copia)
+ * COME ATTIVARE L'INVIO REALE SENZA COMPRARE UN DOMINIO (GRATIS CON GMAIL):
+ * 1. Usa Google Apps Script su https://script.google.com (vedi Sezione 7 di
+ *    CLOUDFLARE_GUIDA.md: bastano 10 righe di codice da copiare e incollare!).
+ * 2. Incolla l'URL ottenuto su Cloudflare -> Settings -> Variables and Secrets:
+ *      GMAIL_WEBHOOK_URL = https://script.google.com/macros/s/.../exec
+ *      HOST_NOTIFICATION_EMAIL = tua@gmail.com (per ricevere copia anche tu)
+ *
+ * In alternativa, se un giorno comprerai un dominio, puoi usare RESEND_API_KEY.
  * ============================================================================
  */
 
@@ -247,6 +247,8 @@ export interface SendConfirmationEmailResult {
 }
 
 export async function inviaEmailConfermaResend(params: {
+  gmailWebhookUrl?: string;
+  gmailWebhookSecret?: string;
   resendApiKey?: string;
   fromEmail?: string;
   hostNotificationEmail?: string;
@@ -266,6 +268,88 @@ export async function inviaEmailConfermaResend(params: {
     };
   }
 
+  const hostEmail = (
+    params.hostNotificationEmail ||
+    IMPOSTAZIONI_EMAIL.emailNotificaHost ||
+    ''
+  ).trim();
+
+  const hostSubject = `[Modo Stays] Nuova prenotazione — ${suite.name} (${booking.checkIn} / ${booking.checkOut})`;
+  const hostText = [
+    `Nuova prenotazione ricevuta sul sito Modo Stays!`,
+    '',
+    `Codice: ${booking.id}`,
+    `Suite: ${suite.name}`,
+    `Check-in: ${formattaDataItaliana(booking.checkIn)}`,
+    `Check-out: ${formattaDataItaliana(booking.checkOut)}`,
+    `Ospiti: ${booking.guestsCount}`,
+    `Totale: €${booking.totalAmountEur}`,
+    '',
+    `Ospite: ${booking.guestName}`,
+    `Email ospite: ${recipient}`,
+    `Telefono: ${booking.guestPhone || 'Non indicato'}`,
+    `Note: ${booking.notes || 'Nessuna'}`,
+  ].join('\n');
+
+  // 1) METODO SENZA DOMINIO: Google Apps Script / Gmail (gratis, invia a chiunque)
+  if (params.gmailWebhookUrl && params.gmailWebhookUrl.trim()) {
+    try {
+      const response = await fetch(params.gmailWebhookUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          secret: (params.gmailWebhookSecret || '').trim(),
+          to: recipient,
+          subject: generated.subject,
+          html: generated.html,
+          text: generated.text,
+          senderName: 'Modo Stays',
+          replyTo: IMPOSTAZIONI_EMAIL.emailContatto,
+          hostEmail: hostEmail.includes('@') ? hostEmail : '',
+          hostSubject,
+          hostText,
+        }),
+      });
+
+      const rawText = await response.text();
+      let parsed: { ok?: boolean; error?: string; hostNotified?: boolean } | null =
+        null;
+      try {
+        parsed = JSON.parse(rawText) as {
+          ok?: boolean;
+          error?: string;
+          hostNotified?: boolean;
+        };
+      } catch {
+        parsed = null;
+      }
+
+      if (response.ok && (!parsed || parsed.ok !== false)) {
+        return {
+          sent: true,
+          hostNotified: parsed?.hostNotified ?? Boolean(hostEmail),
+          recipient,
+          subject: generated.subject,
+        };
+      }
+
+      return {
+        sent: false,
+        reason: parsed?.error || `Errore Gmail Webhook HTTP ${response.status}`,
+        recipient,
+        subject: generated.subject,
+      };
+    } catch (err) {
+      return {
+        sent: false,
+        reason: err instanceof Error ? err.message : 'Errore connessione Gmail',
+        recipient,
+        subject: generated.subject,
+      };
+    }
+  }
+
+  // 2) METODO CON DOMINIO PROPRIO: Resend API
   if (!params.resendApiKey) {
     return {
       sent: false,
@@ -278,11 +362,6 @@ export async function inviaEmailConfermaResend(params: {
   const from =
     (params.fromEmail || '').trim() || 'Modo Stays <onboarding@resend.dev>';
   const apiKey = params.resendApiKey.trim();
-  const hostEmail = (
-    params.hostNotificationEmail ||
-    IMPOSTAZIONI_EMAIL.emailNotificaHost ||
-    ''
-  ).trim();
 
   let guestSent = false;
   let guestReason: string | undefined;
@@ -323,23 +402,6 @@ export async function inviaEmailConfermaResend(params: {
 
   let hostNotified = false;
   if (hostEmail && hostEmail.includes('@')) {
-    const hostSubject = `[Modo Stays] Nuova prenotazione — ${suite.name} (${booking.checkIn} / ${booking.checkOut})`;
-    const hostText = [
-      `Nuova prenotazione ricevuta sul sito Modo Stays!`,
-      '',
-      `Codice: ${booking.id}`,
-      `Suite: ${suite.name}`,
-      `Check-in: ${formattaDataItaliana(booking.checkIn)}`,
-      `Check-out: ${formattaDataItaliana(booking.checkOut)}`,
-      `Ospiti: ${booking.guestsCount}`,
-      `Totale: €${booking.totalAmountEur}`,
-      '',
-      `Ospite: ${booking.guestName}`,
-      `Email ospite: ${recipient}`,
-      `Telefono: ${booking.guestPhone || 'Non indicato'}`,
-      `Note: ${booking.notes || 'Nessuna'}`,
-    ].join('\n');
-
     try {
       const hostRes = await fetch('https://api.resend.com/emails', {
         method: 'POST',

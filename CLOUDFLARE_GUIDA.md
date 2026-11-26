@@ -91,9 +91,9 @@ Sempre dentro **Workers & Pages → `modo-stays` → Settings → Variables and 
 | **`APP_URL`** | L'indirizzo del tuo sito (es. `https://modo-stays.pages.dev` o il tuo dominio). | Consigliata |
 | **`STRIPE_SECRET_KEY`** | La chiave segreta `sk_live_...` (o `sk_test_...`) presa dal tuo account **Stripe**. Senza questa, il sito usa la modalità prova (Sandbox). | Solo per pagamenti reali |
 | **`STRIPE_WEBHOOK_SECRET`** | La chiave `whsec_...` creata su Stripe per l'URL `https://TUO-SITO/api/webhooks/stripe`. | Solo per pagamenti reali |
-| **`RESEND_API_KEY`** | La chiave gratuita presa da **[resend.com](https://resend.com)** (`re_...`) per spedire davvero l'email di conferma (`src/EMAIL_CONFERMA.ts`). | Per inviare email reali |
-| **`EMAIL_FROM`** | Mittente email, es. `Modo Stays <onboarding@resend.dev>` (nei test) o `Modo Stays <prenotazioni@tuodominio.com>`. | Opzionale con Resend |
-| **`HOST_NOTIFICATION_EMAIL`** | La tua email personale se vuoi ricevere in copia nascosta ogni conferma inviata agli ospiti. | Opzionale con Resend |
+| **`GMAIL_WEBHOOK_URL`** | Indirizzo creato gratis con Google Apps Script (vedi Sezione 7) per inviare email a **chiunque senza comprare un dominio**. | **Consigliato (senza dominio)** |
+| **`HOST_NOTIFICATION_EMAIL`** | La tua email personale per ricevere anche tu una mail ogni volta che qualcuno prenota. | Consigliata |
+| **`RESEND_API_KEY`** | Solo se un giorno compri un dominio proprio (es. `modostays.com`) e vuoi usare Resend. | Opzionale |
 | **`VITE_GOOGLE_MAPS_API_KEY`** | *(Non più necessaria se usi la tua Google My Maps in `mappaMyMapsUrl`!)*. | Opzionale |
 
 ---
@@ -122,52 +122,76 @@ Se trova una nuova prenotazione arrivata da Airbnb o Booking, la salva subito ne
 
 ---
 
-## 7. Come Attivare l'Email di Conferma (Funziona Anche Senza Stripe!)
+## 7. Come Mandare Email di Conferma a Chiunque **Senza Comprare un Dominio** (Gratis con Gmail!)
 
-### Cos'è "la chiave" (API Key) spiegata semplice
-Cloudflare ospita il tuo sito, ma **non ha una casella di posta propria** per spedire email a Gmail, Libero o Outlook.  
-Per spedire un'email vera usiamo un servizio gratuito chiamato **Resend** (che fa da "postino").  
-La **"chiave"** (`RESEND_API_KEY`) è semplicemente una **password lunga** (esempio: `re_AbC123...`) che Resend ti dà gratis e che tu incolli dentro Cloudflare: in questo modo il tuo sito ha il permesso di chiedere a Resend di spedire le email a nome tuo.
+Se non vuoi acquistare un dominio internet (es. `.com` / `.it`), Cloudflare e servizi come Resend non possono inviare email a clienti esterni da soli.  
+**La soluzione gratuita e definitiva** è collegare Cloudflare al tuo account **Gmail** tramite **Google Apps Script** (uno strumento gratuito già incluso nel tuo account Google): spedisce fino a **100 email al giorno gratis per sempre** a **qualsiasi** ospite (`@gmail.com`, `@icloud.com`, `@libero.it`, ecc.) e manda l'avviso anche a te!
 
 ### Posso testarla adesso anche senza Stripe?
-**Sì, al 100%!**  
-Non serve aver attivato Stripe né mettere carte di credito vere: nella modalità di prova attuale (Sandbox), quando un cliente clicca **"Prenota Ora con Carta"** e poi conferma usando la carta finta già scritta (`4242...`), il sito genera e **spedisce davvero** l'email di conferma definita in `src/EMAIL_CONFERMA.ts`.
+**Sì, al 100%!** Nella modalità di prova attuale (carta test `4242...`), appena il cliente clicca **Paga**, l'email parte lo stesso.
 
 ---
 
-### Tutti i passaggi esatti (3 minuti, gratis)
+### Passaggi esatti (3 minuti, copia e incolla)
 
-#### Passo 1 — Prendi la chiave gratis su Resend
-1. Vai su **[resend.com](https://resend.com)** e clicca **Get Started / Sign Up**.
-2. Registrati usando **la tua email personale** (esempio: `tuamail@gmail.com`). Conferma l'account dal link che ti mandano.
-3. Una volta dentro Resend, nel menu a sinistra clicca su **API Keys**.
-4. Clicca su **Create API Key**:
-   - **Name**: scrivi `Modo Stays`
-   - **Permission**: lascia **Full access** (o *Sending access*)
-   - Clicca **Add**.
-5. Ti apparirà un codice che inizia con **`re_`** (esempio `re_9xK2...`). Clicca sull'icona **Copia** e salvalo un attimo nei tuoi appunti *(Resend lo mostra una volta sola!)*.
+#### Passo 1 — Crea il "postino" gratuito su Google (Apps Script)
+1. Vai su **[script.google.com](https://script.google.com)** con il tuo account Gmail e clicca **Nuovo progetto** (in alto a sinistra).
+2. Cancella le righe che trovi già scritte dentro (`function myFunction()...`) e **incolla esattamente tutto questo blocco**:
 
-> **Regola importante di Resend per le prove gratuite (senza dominio tuo):**  
-> Finché non colleghi un tuo dominio internet personale (es. `modostays.com`) dentro Resend → *Domains*, l'account gratuito di prova ti permette di spedire email **solo all'indirizzo email con cui ti sei registrato su Resend**.  
-> Quindi, per fare la tua prima prova sul sito, quando compili la prenotazione inserisci **la tua stessa email**! Quando poi vorrai inviare email a qualsiasi cliente o amico, ti basterà collegare un tuo dominio su Resend nella sezione *Domains*.
+```javascript
+function doPost(e) {
+  var data = JSON.parse(e.postData.contents);
+  MailApp.sendEmail({
+    to: data.to,
+    subject: data.subject,
+    body: data.text,
+    htmlBody: data.html,
+    name: data.senderName || 'Modo Stays'
+  });
+  var hostNotified = false;
+  if (data.hostEmail) {
+    MailApp.sendEmail({
+      to: data.hostEmail,
+      subject: data.hostSubject,
+      body: data.hostText,
+      name: data.senderName || 'Modo Stays'
+    });
+    hostNotified = true;
+  }
+  return ContentService
+    .createTextOutput(JSON.stringify({ ok: true, hostNotified: hostNotified }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+```
 
-#### Passo 2 — Incolla la chiave dentro Cloudflare
-1. Apri **[dash.cloudflare.com](https://dash.cloudflare.com)** → **Workers & Pages** → clicca sul tuo progetto **`modo-stays`**.
+3. Clicca l'icona del **Dischetto (Salva)** in alto.
+4. Clicca il pulsante blu **Esegui il deployment** (in alto a destra) → **Nuovo deployment**.
+5. Accanto a *Seleziona tipo* clicca sulla **rotella** ⚙️ → scegli **App web**.
+6. Compila i due menu così:
+   - **Esegui come:** **Me** (la tua email Gmail)
+   - **Chi può accedere:** **`Chiunque`** *(importantissimo, altrimenti Cloudflare non riesce a chiamarlo!)*
+7. Clicca **Esegui il deployment** → **Autorizza l'accesso** → scegli il tuo account Google.
+   - *(Se compare la scritta "Google non ha verificato questa app", è normale perché l'hai creata tu: clicca **Avanzate** in basso a sinistra → **Apri Progetto senza titolo (non sicuro)** → **Consenti**).*
+8. Alla fine ti mostra un indirizzo chiamato **URL app web** (inizia con `https://script.google.com/macros/s/.../exec`): clicca **Copia**.
+
+#### Passo 2 — Incolla l'indirizzo su Cloudflare
+1. Apri **[dash.cloudflare.com](https://dash.cloudflare.com)** → **Workers & Pages** → clicca su **`modo-stays`**.
 2. Vai su **Settings** → **Variables and Secrets** → clicca **Add**.
-3. Compila così:
-   - **Type**: scegli **Secret** *(o Text, vanno bene entrambi ma Secret la tiene nascosta)*
-   - **Variable name**: scrivi esattamente **`RESEND_API_KEY`** (tutto maiuscolo)
-   - **Value**: incolla il codice `re_...` copiato da Resend.
-4. Clicca **Save**.
-5. *(Facoltativo ma comodo)* Clicca di nuovo **Add**, scrivi **Variable name**: `HOST_NOTIFICATION_EMAIL` e come **Value** metti la tua email: così ogni volta che un ospite prenota riceverai anche tu una copia della conferma.
-6. **Passaggio obbligatorio:** vai nella scheda **Deployments** (in alto), clicca i tre puntini `...` sull'ultimo deploy e scegli **Retry deployment** (serve per far leggere le nuove chiavi al sito).
+   - **Type**: scegli **Secret** (o Text)
+   - **Variable name**: **`GMAIL_WEBHOOK_URL`**
+   - **Value**: incolla l'URL copiato al punto 8 (`https://script.google.com/macros/s/.../exec`)
+   - Clicca **Save**.
+3. *(Per ricevere una mail anche tu ad ogni prenotazione)* Clicca di nuovo **Add**:
+   - **Variable name**: **`HOST_NOTIFICATION_EMAIL`**
+   - **Value**: scrivi la tua email Gmail
+   - Clicca **Save**.
+4. *(Se prima avevi aggiunto `RESEND_API_KEY`, puoi lasciarla o eliminarla: il sito usa automaticamente `GMAIL_WEBHOOK_URL` appena è presente).*
+5. Vai nella scheda **Deployments** → clicca sui tre puntini `...` dell'ultimo deploy → **Retry deployment**.
 
-#### Passo 3 — Fai la prova sul sito (senza Stripe)
-1. Apri una suite di Nizza sul tuo sito pubblico e scegli due date libere sul calendario.
-2. Inserisci il nome e **la tua stessa email usata su Resend**.
-3. Clicca **Prenota Ora con Carta** → si apre la finestra di prova con la carta finta già pronta (`4242 4242...`) → clicca **Paga €...**.
-4. Dopo 2 secondi vedrai scritto **"Email di conferma inviata a ..."** (e puoi anche cliccare **Vedi Email di Conferma** per vederla subito sullo schermo).
-5. Controlla la tua casella email (e per sicurezza la cartella **Spam / Promozioni** la prima volta): troverai l'email ufficiale di **Modo Stays**!
+#### Passo 3 — Fai la prova finale
+1. Apri il sito pubblico, prenota due date con la carta finta (`4242...`) inserendo anche l'email di un tuo amico.
+2. Il tuo amico riceverà subito l'email di conferma di **Modo Stays** e tu riceverai nella tua Gmail la notifica con tutti i suoi dati!
 
-*(Se in futuro vuoi cambiare le frasi, gli orari di check-in o la firma dentro l'email, modifica il file **`src/EMAIL_CONFERMA.ts`** su GitHub e Cloudflare lo aggiornerà da solo.)*
+*(Se in futuro vuoi modificare le frasi, gli orari o la firma dell'email, apri **`src/EMAIL_CONFERMA.ts`** su GitHub.)*
+
 

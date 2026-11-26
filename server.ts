@@ -186,6 +186,8 @@ async function startServer(): Promise<void> {
                     (l) => l.id === suite.locationId
                   );
                   const emailRes = await inviaEmailConfermaResend({
+                    gmailWebhookUrl: process.env.GMAIL_WEBHOOK_URL,
+                    gmailWebhookSecret: process.env.GMAIL_WEBHOOK_SECRET,
                     resendApiKey: process.env.RESEND_API_KEY,
                     fromEmail: process.env.EMAIL_FROM,
                     hostNotificationEmail: process.env.HOST_NOTIFICATION_EMAIL,
@@ -465,6 +467,8 @@ async function startServer(): Promise<void> {
     };
     if (suite) {
       emailStatus = await inviaEmailConfermaResend({
+        gmailWebhookUrl: process.env.GMAIL_WEBHOOK_URL,
+        gmailWebhookSecret: process.env.GMAIL_WEBHOOK_SECRET,
         resendApiKey: process.env.RESEND_API_KEY,
         fromEmail: process.env.EMAIL_FROM,
         hostNotificationEmail: process.env.HOST_NOTIFICATION_EMAIL,
@@ -570,7 +574,9 @@ async function startServer(): Promise<void> {
         appBaseUrl: resolveAppBaseUrl(req),
         autoSyncIntervalMinutes: AUTO_SYNC_INTERVAL_MINUTES,
         mapEmbedUrl: convertiLinkMyMaps(dbState.mapEmbedUrl ?? BRAND_INFO.mappaMyMapsUrl),
-        emailConfigured: Boolean(process.env.RESEND_API_KEY),
+        emailConfigured: Boolean(
+          process.env.GMAIL_WEBHOOK_URL || process.env.RESEND_API_KEY
+        ),
       },
     });
   });
@@ -730,6 +736,8 @@ async function startServer(): Promise<void> {
     }
     const location = dbState.locations.find((l) => l.id === suite.locationId);
     const emailStatus = await inviaEmailConfermaResend({
+      gmailWebhookUrl: process.env.GMAIL_WEBHOOK_URL,
+      gmailWebhookSecret: process.env.GMAIL_WEBHOOK_SECRET,
       resendApiKey: process.env.RESEND_API_KEY,
       fromEmail: process.env.EMAIL_FROM,
       hostNotificationEmail: process.env.HOST_NOTIFICATION_EMAIL,

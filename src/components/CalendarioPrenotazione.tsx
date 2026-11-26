@@ -92,6 +92,7 @@ export function CalendarioPrenotazione({
   const [confirmedBooking, setConfirmedBooking] = useState<BookingRecord | null>(null);
   const [emailStatus, setEmailStatus] = useState<{
     sent: boolean;
+    hostNotified?: boolean;
     reason?: string;
     recipient?: string;
   } | null>(null);
@@ -461,7 +462,11 @@ export function CalendarioPrenotazione({
                   <Mail className="w-3.5 h-3.5 shrink-0" />
                   {emailStatus?.sent
                     ? `Email di conferma inviata a ${emailStatus.recipient}`
-                    : 'Modello email di conferma pronto (attiva RESEND_API_KEY per invio automatico)'}
+                    : emailStatus?.reason && emailStatus.reason !== 'missing_api_key'
+                    ? `Nota invio email: ${emailStatus.reason}${
+                        emailStatus.hostNotified ? ' (avviso host inviato)' : ''
+                      }`
+                    : 'Modello email di conferma pronto (collega GMAIL_WEBHOOK_URL su Cloudflare per invio automatico)'}
                 </span>
                 <button
                   type="button"

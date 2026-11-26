@@ -579,8 +579,14 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
       } else {
         setSyncError(
           data.emailStatus?.reason === 'missing_api_key'
-            ? 'Invio reale non ancora attivo: aggiungi RESEND_API_KEY su Cloudflare (vedi guida).'
-            : `Invio email non riuscito: ${data.emailStatus?.reason || 'errore sconosciuto'}`
+            ? 'Invio reale non ancora attivo: aggiungi GMAIL_WEBHOOK_URL (senza dominio) su Cloudflare — vedi Sezione 7 di CLOUDFLARE_GUIDA.md.'
+            : `Invio ospite non riuscito: ${
+                data.emailStatus?.reason || 'errore sconosciuto'
+              }${
+                data.emailStatus?.hostNotified
+                  ? ' — L’avviso all’Host invece è stato inviato!'
+                  : ''
+              }`
         );
       }
     } finally {
@@ -1662,14 +1668,14 @@ export function AreaHost({ onCatalogUpdated }: AreaHostProps) {
                 </h3>
                 <p className="text-xs text-[#666158] mt-2 leading-relaxed">
                   {integrationStatus?.emailConfigured
-                    ? 'RESEND_API_KEY configurata: ogni prenotazione confermata invia automaticamente l’email HTML all’ospite.'
-                    : 'Il file src/EMAIL_CONFERMA.ts genera già l’email completa. Aggiungi RESEND_API_KEY su Cloudflare per spedirla automaticamente nella casella dell’ospite.'}
+                    ? 'Invio automatico attivo: ogni prenotazione confermata spedisce l’email HTML all’ospite e la notifica all’Host.'
+                    : 'Il file src/EMAIL_CONFERMA.ts genera già l’email completa. Aggiungi GMAIL_WEBHOOK_URL su Cloudflare (gratis, senza comprare alcun dominio!) per inviarla a qualsiasi ospite.'}
                 </p>
               </div>
               <div className="px-4 py-2 border border-[#D8D3C8] bg-[#FAF9F6] text-xs font-mono text-[#1C1A17] self-start">
                 {integrationStatus?.emailConfigured
-                  ? 'Invio Email Resend: Attivo'
-                  : 'Email: Solo Anteprima (manca RESEND_API_KEY)'}
+                  ? 'Invio Email: Attivo'
+                  : 'Email: Solo Anteprima (manca GMAIL_WEBHOOK_URL)'}
               </div>
             </div>
           </div>

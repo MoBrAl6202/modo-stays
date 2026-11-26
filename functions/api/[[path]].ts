@@ -38,6 +38,8 @@ interface CloudflareEnv {
   GOOGLE_MAPS_API_KEY?: string;
   VITE_GOOGLE_MAPS_API_KEY?: string;
   APP_URL?: string;
+  GMAIL_WEBHOOK_URL?: string;
+  GMAIL_WEBHOOK_SECRET?: string;
   RESEND_API_KEY?: string;
   EMAIL_FROM?: string;
   HOST_NOTIFICATION_EMAIL?: string;
@@ -319,6 +321,8 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
             if (suite) {
               const location = state.locations.find((l) => l.id === suite.locationId);
               const emailRes = await inviaEmailConfermaResend({
+                gmailWebhookUrl: env.GMAIL_WEBHOOK_URL,
+                gmailWebhookSecret: env.GMAIL_WEBHOOK_SECRET,
                 resendApiKey: env.RESEND_API_KEY,
                 fromEmail: env.EMAIL_FROM,
                 hostNotificationEmail: env.HOST_NOTIFICATION_EMAIL,
@@ -537,6 +541,8 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
     };
     if (suite) {
       emailStatus = await inviaEmailConfermaResend({
+        gmailWebhookUrl: env.GMAIL_WEBHOOK_URL,
+        gmailWebhookSecret: env.GMAIL_WEBHOOK_SECRET,
         resendApiKey: env.RESEND_API_KEY,
         fromEmail: env.EMAIL_FROM,
         hostNotificationEmail: env.HOST_NOTIFICATION_EMAIL,
@@ -650,7 +656,7 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
           appBaseUrl: resolveAppBaseUrl(request, env),
           autoSyncIntervalMinutes: AUTO_SYNC_INTERVAL_MINUTES,
           mapEmbedUrl: convertiLinkMyMaps(state.mapEmbedUrl ?? BRAND_INFO.mappaMyMapsUrl),
-          emailConfigured: Boolean(env.RESEND_API_KEY),
+          emailConfigured: Boolean(env.GMAIL_WEBHOOK_URL || env.RESEND_API_KEY),
         },
       });
     }
@@ -808,6 +814,8 @@ export async function onRequest(context: PagesEventContext): Promise<Response> {
       if (!suite) return jsonResponse({ error: 'Suite collegata non trovata.' }, 404);
       const location = state.locations.find((l) => l.id === suite.locationId);
       const emailStatus = await inviaEmailConfermaResend({
+        gmailWebhookUrl: env.GMAIL_WEBHOOK_URL,
+        gmailWebhookSecret: env.GMAIL_WEBHOOK_SECRET,
         resendApiKey: env.RESEND_API_KEY,
         fromEmail: env.EMAIL_FROM,
         hostNotificationEmail: env.HOST_NOTIFICATION_EMAIL,
